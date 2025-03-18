@@ -4,6 +4,11 @@ from werkzeug.utils import secure_filename
 import numpy as np
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
+from model_utils import download_model
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -17,12 +22,30 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 # Create upload folder if it doesn't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+# Global variable for model
+MODEL = None
+
+def load_model_global():
+    """Initialize the global model."""
+    global MODEL
+    if MODEL is None:
+        try:
+            model_path = download_model()
+            MODEL = load_model(model_path)
+        except Exception as e:
+            print(f"Error loading model: {str(e)}")
+            raise
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def predict_tumor(image_path):
-    # Load the model
-    model = load_model('brain_tumor_mri.keras')
+    """
+    Make prediction using the loaded model
+    """
+    global MODEL
+    if MODEL is None:
+        load_model_global()
     
     # Load and preprocess the image
     img = load_img(image_path, target_size=(256, 256), color_mode='grayscale')
@@ -33,7 +56,7 @@ def predict_tumor(image_path):
     img_normalized = np.expand_dims(img_normalized, axis=0)
     
     # Make prediction
-    predictions = model.predict(img_normalized)
+    predictions = MODEL.predict(img_normalized)
     classes = ['Glioma', 'Meningioma', 'Pituitary', 'No Tumor']
     
     # Get prediction results
@@ -77,6 +100,11 @@ def predict():
             return jsonify({'error': str(e)}), 500
     
     return jsonify({'error': 'Invalid file type'}), 400
+
+# Initialize model when starting the app
+@app.before_first_request
+def initialize():
+    load_model_global()
 
 if __name__ == '__main__':
     app.run(debug=True) 
